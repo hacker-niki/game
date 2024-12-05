@@ -10,9 +10,9 @@ public class Game
     public int GameStatus { get; set; } // 0 - не начата, 1 - начата, 2 - закончена 
     public Player? Winner { get; set; } // Победитель или null
     
-    public int PlayersCount { get; init; }
+    public int PlayersCount { get; init; } // Максимальное количество пользователей
     
-    public Game(int boardSize)
+    public Game(int boardSize, int playersCount)
     {
         Id = Guid.NewGuid().ToString();
         BoardSize = boardSize;
@@ -21,5 +21,6 @@ public class Game
         CurrentPlayerTurn = null;
         GameStatus = 0;
         Winner = null;
+        PlayersCount = playersCount;
     }
 }
