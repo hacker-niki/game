@@ -5,7 +5,7 @@ namespace Server.Services;
 public class GameService : IGameService
 {
     private readonly Dictionary<string, Game> _games = new();
-    private readonly string[] _symbols = { "X", "O", "△", "□", "◆", "◇", "▲", "○", "●" }; // Доступные символы
+    private readonly string[] _symbols = ["X", "O", "△", "□", "◆", "◇", "▲", "○", "●"]; // Доступные символы
 
     public Game CreateGame(int boardSize, string playerId, string playerName)
     {
@@ -15,76 +15,80 @@ public class GameService : IGameService
         };
         var player = new Player { Id = playerId, Name = playerName, Symbol = _symbols[0] };
         game.Players.Add(player);
-        game.CurrentTurn = player.Symbol;
+        game.CurrentPlayerTurn = player;
         _games[game.Id] = game;
         return game;
     }
 
     public bool JoinGame(string gameId, string playerId, string playerName)
     {
-        if (_games.TryGetValue(gameId, out var game) && game.Players.Count < _symbols.Length)
+        if (_games.TryGetValue(gameId, out var game) && game.PlayersCount < game.Players.Count)
         {
             var nextSymbol = _symbols[game.Players.Count];
             var player = new Player { Id = playerId, Name = playerName, Symbol = nextSymbol };
             game.Players.Add(player);
+
+            if (game.Players.Count == game.PlayersCount)
+            {
+                game.GameStatus = 1; // игра начата
+            }
+
             return true;
         }
+
         return false;
     }
 
     public bool MakeMove(string gameId, string playerId, int x, int y)
     {
-        if (_games.TryGetValue(gameId, out var game) && !game.IsGameOver)
+        if (_games.TryGetValue(gameId, out var game) && game.GameStatus == 1)
         {
             var currentPlayer = game.Players.FirstOrDefault(p => p.Id == playerId);
-            if (currentPlayer == null || game.CurrentTurn != currentPlayer.Symbol) return false;
+            if (currentPlayer == null || game.CurrentPlayerTurn != currentPlayer) return false;
+            game.Board[x, y] = currentPlayer.Symbol;
 
-            if (game.Board[x, y] == null)
+            // Проверяем победителя
+            if (CheckWinner(game, x, y, currentPlayer.Symbol))
             {
-                game.Board[x, y] = currentPlayer.Symbol;
-
-                // Проверяем победителя
-                if (CheckWinner(game, x, y, currentPlayer.Symbol))
+                game.GameStatus = 2;
+                game.Winner = currentPlayer;
+            }
+            else
+            {
+                // Проверка на ничью
+                bool isDraw = true;
+                foreach (var cell in game.Board)
                 {
-                    game.IsGameOver = true;
-                    game.Winner = currentPlayer.Symbol;
+                    if (string.IsNullOrEmpty(cell))
+                    {
+                        isDraw = false;
+                        break;
+                    }
+                }
+
+                if (isDraw)
+                {
+                    game.GameStatus = 2;
+                    game.Winner = null;
                 }
                 else
                 {
-                    // Проверка на ничью
-                    bool isDraw = true;
-                    foreach (var cell in game.Board)
-                    {
-                        if (string.IsNullOrEmpty(cell))
-                        {
-                            isDraw = false;
-                            break;
-                        }
-                    }
-
-                    if (isDraw)
-                    {
-                        game.IsGameOver = true;
-                        game.Winner = "Draw";
-                    }
-                    else
-                    {
-                        // Передаем ход следующему игроку
-                        var currentIndex = game.Players.FindIndex(p => p.Symbol == game.CurrentTurn);
-                        var nextIndex = (currentIndex + 1) % game.Players.Count;
-                        game.CurrentTurn = game.Players[nextIndex].Symbol;
-                    }
+                    // Передаем ход следующему игроку
+                    var currentIndex = game.Players.FindIndex(p => p == game.CurrentPlayerTurn);
+                    var nextIndex = (currentIndex + 1) % game.Players.Count;
+                    game.CurrentPlayerTurn = game.Players[nextIndex];
                 }
-
-                return true;
             }
+
+            return true;
         }
+
         return false;
     }
 
-    public Game GetGame(string gameId)
+    public Game? GetGame(string gameId)
     {
-        return _games.TryGetValue(gameId, out var game) ? game : null;
+        return _games.GetValueOrDefault(gameId);
     }
 
     private bool CheckWinner(Game game, int x, int y, string symbol)
@@ -151,5 +155,34 @@ public class GameService : IGameService
         }
 
         return rowWin || colWin || mainDiagWin || antiDiagWin;
+    }
+
+    public bool DropGame(string gameId)
+    {
+        if (_games.Remove(gameId))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public Game[] GetAllGames()
+    {
+        return _games.Values.ToArray();
+    }
+
+    public Player[] GetGamePlayers(string gameId)
+    {
+        return _games.TryGetValue(gameId, out var game) ? game.Players.ToArray() : [];
+    }
+
+    public int GetState(string gameId)
+    {
+        if (_games.TryGetValue(gameId, out var game))
+        {
+            return game.GameStatus;
+        }
+        return -1;
     }
 }

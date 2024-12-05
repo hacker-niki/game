@@ -37,9 +37,9 @@ public class GameHub : Hub
         if (success)
         {
             var game = _gameService.GetGame(gameId);
-            await Clients.Group(gameId).SendAsync("UpdateBoard", game.Board, game.CurrentTurn);
+            await Clients.Group(gameId).SendAsync("UpdateBoard", game.Board, game.CurrentPlayerTurn);
 
-            if (game.IsGameOver)
+            if (game.GameStatus == 2)
             {
                 await Clients.Group(gameId).SendAsync("GameOver", game.Winner);
             }
