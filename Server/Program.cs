@@ -9,6 +9,17 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddSignalR();
 
+builder.Services.AddCors(opts => opts.AddDefaultPolicy(bld => // <-- added this
+{
+    bld
+        .AllowAnyOrigin()
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .WithExposedHeaders("*")
+        ;
+}));
+
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -18,8 +29,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 app.MapHub<GameHub>("/gamehub");
-
+app.UseCors();
 app.Run();

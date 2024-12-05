@@ -1,0 +1,71 @@
+@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+
+<h1>Game</h1>
+
+<button @onclick="CreateGame">Create Game</button>
+<button @onclick="JoinGame">Join Game</button>
+<button @onclick="MakeMove">Make Move</button>
+
+<div>
+    @if (gameId != null)
+    {
+        <p>Game ID: @gameId</p>
+    }
+    @if (players != null)
+    {
+        <p>Players: @string.Join(", ", players)</p>
+    }
+    @if (board != null)
+    {
+        <p>Board:</p>
+        <pre>@board</pre>
+    }
+    @if (winner != null)
+    {
+        <p>Winner: @winner</p>
+    }
+</div>
+
+@code {
+    private HubConnection _hubConnection;
+    private string gameId;
+    private string[] players;
+    private string board;
+    private string winner;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _hubConnection = new HubConnectionBuilder().WithUrl("http://localhost:5000/gamehub").Build();
+        await _hubConnection.StartAsync();
+    }
+
+    private async Task CreateGame()
+    {
+        gameId = await _hubConnection.InvokeAsync<string>("CreateGame", 10, "John");
+    }
+
+    private async Task JoinGame()
+    {
+        var success = await _hubConnection.InvokeAsync<bool>("JoinGame", gameId, "Alice");
+        if (success)
+        {
+            players = await _hubConnection.InvokeAsync<string[]>("GetPlayers", gameId);
+        }
+    }
+
+    private async Task MakeMove()
+    {
+        var success = await _hubConnection.InvokeAsync<bool>("MakeMove", gameId, 3, 4);
+        if (success)
+        {
+            board = await _hubConnection.InvokeAsync<string>("GetBoard", gameId);
+            winner = await _hubConnection.InvokeAsync<string>("GetWinner", gameId);
+        }
+    }
+
+    protected async Task DisposeAsync(bool disposing)
+    {
+        await _hubConnection.DisposeAsync();
+    }
+}
