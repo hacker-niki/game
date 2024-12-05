@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using Newtonsoft.Json;
 using Server.Models;
 using Server.Services;
 
@@ -7,51 +8,34 @@ namespace Server.Hubs
     public class GameHub : Hub
     {
         private readonly IGameService _gameService;
+        private readonly ILogger<GameHub> _logger;
 
-        public GameHub(IGameService gameService)
+        public GameHub(IGameService gameService, ILogger<GameHub> logger)
         {
             _gameService = gameService;
+            _logger = logger;
         }
-
-        /// <summary>
-        /// Creates a new game and adds the creator to a SignalR group with the game ID.
-        /// </summary>
-        /// <param name="boardSize">The size of the game board.</param>
-        /// <param name="playerName">The name of the player creating the game.</param>
-        /// <returns>The ID of the created game.</returns>
-        public async Task<string> CreateGame(int boardSize, string playerName)
+        public async void CreateGame(int boardSize, string playerName, int playersCount = 2)
         {
-            var game = _gameService.CreateGame(boardSize, Context.ConnectionId, playerName);
-            await Groups.AddToGroupAsync(Context.ConnectionId, game.Id);
-            return game.Id;
+            var game = _gameService.CreateGame(boardSize, Context.ConnectionId, playerName, playersCount);
+            var json = JsonConvert.SerializeObject(game);
+            await Clients.Caller.SendAsync("RecieveCreateGame", json);
         }
-
-        /// <summary>
-        /// Allows a player to join an existing game and notifies all players in the game.
-        /// </summary>
-        /// <param name="gameId">The ID of the game to join.</param>
-        /// <param name="playerName">The name of the player joining the game.</param>
-        /// <returns>True if the player successfully joined the game, otherwise false.</returns>
-        public async Task<bool> JoinGame(string gameId, string playerName)
+        public async Task JoinGame(string gameId, string playerName)
         {
             bool success = _gameService.JoinGame(gameId, Context.ConnectionId, playerName);
+            // TODO: if gameservice.JoinGame returns adding new user notify all users of game
             if (success)
             {
-                await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
                 var game = _gameService.GetGame(gameId);
-                await Clients.Group(gameId).SendAsync("PlayerJoined", game.Players);
+                foreach (var player in game?.Players?? new())
+                {
+                    await Clients.Client(player.Id).SendAsync("JoinUser", game);
+                }
             }
-            return success;
+            // TODO:  if gameservice.JoinGame returns fulling of users for game, start game and notify users about start
         }
-
-        /// <summary>
-        /// Processes a player's move and updates the game state for all players.
-        /// </summary>
-        /// <param name="gameId">The ID of the game.</param>
-        /// <param name="x">The x-coordinate of the move.</param>
-        /// <param name="y">The y-coordinate of the move.</param>
-        /// <returns>True if the move was valid and successful, otherwise false.</returns>
-        public async Task<bool> MakeMove(string gameId, int x, int y)
+        public async Task MakeMove(string gameId, int x, int y)
         {
             bool success = _gameService.MakeMove(gameId, Context.ConnectionId, x, y);
             if (success)
@@ -60,32 +44,37 @@ namespace Server.Hubs
                 if (game != null)
                 {
                     // Notify all players in the group about the updated game board and current turn
-                    await Clients.Group(gameId).SendAsync("UpdateBoard", game.Board, game.CurrentPlayerTurn);
+                    foreach (var player in game?.Players ?? new())
+                    {
+                        await Clients.Client(player.Id).SendAsync("UpdateBoard", game.Board, game.CurrentPlayerTurn);
+                    }
 
                     // Check if the game has ended
                     if (game.GameStatus == 2) // Assuming 2 indicates "Game Over"
                     {
-                        await Clients.Group(gameId).SendAsync("GameOver", game.Winner);
+                        foreach (var player in game?.Players ?? new())
+                        {
+                            await Clients.Client(player.Id).SendAsync("UpdateBoard", game.Board, game.CurrentPlayerTurn);
+                            await Clients.Client(player.Id).SendAsync("GameOver", game.Winner);
+                        }
                     }
                 }
             }
-            return success;
         }
-
-        /// <summary>
-        /// Retrieves the state of a game by its ID.
-        /// </summary>
-        /// <param name="gameId">The ID of the game.</param>
-        /// <returns>The game object, or null if not found.</returns>
-        public Game? GetGame(string gameId)
+        public async Task GetAllGames () 
         {
-            return _gameService.GetGame(gameId);
+            var games = _gameService.GetAllGames();
+            var json = JsonConvert.SerializeObject(games);
+            await Clients.Caller.SendAsync("ReceiveAllGames", json);
+            
+        }
+        public async Task GetGame(string gameId)
+        {
+            var game = _gameService.GetGame(gameId);
+            var json = JsonConvert.SerializeObject(game);
+            await Clients.Caller.SendAsync("ReceiveGetGame", json);
         }
 
-        /// <summary>
-        /// Removes a player from a game group when they disconnect.
-        /// </summary>
-        /// <returns>An asynchronous task.</returns>
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             // Logic to handle player disconnection
@@ -94,9 +83,14 @@ namespace Server.Hubs
             {
                 if (game.Players.Any(p => p.Id == Context.ConnectionId))
                 {
-                    await Groups.RemoveFromGroupAsync(Context.ConnectionId, game.Id);
-                    // Optionally notify other players about the disconnection
-                    await Clients.Group(game.Id).SendAsync("PlayerDisconnected", Context.ConnectionId);
+                    _gameService.DropGame(game.Id);
+                    foreach (var player in game?.Players ?? new())
+                    {
+                        await Clients.Client(player.Id).SendAsync("DropGame", game);
+                    }
+                    // await Groups.RemoveFromGroupAsync(Context.ConnectionId, game.Id);
+                    // // Optionally notify other players about the disconnection
+                    // await Clients.Group(game.Id).SendAsync("PlayerDisconnected", Context.ConnectionId);
                 }
             }
             await base.OnDisconnectedAsync(exception);
