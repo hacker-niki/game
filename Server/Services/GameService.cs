@@ -7,9 +7,9 @@ public class GameService : IGameService
     private readonly Dictionary<string, Game> _games = new();
     private readonly string[] _symbols = ["X", "O", "△", "□", "◆", "◇", "▲", "○", "●"]; // Доступные символы
 
-    public Game CreateGame(int boardSize, string playerId, string playerName)
+    public Game CreateGame(int boardSize, string playerId, string? playerName, int playerCount = 2)
     {
-        var game = new Game(boardSize)
+        var game = new Game(boardSize, playerCount)
         {
             Id = Guid.NewGuid().ToString()
         };
