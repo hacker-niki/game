@@ -1,0 +1,29 @@
+<table style="border-collapse: collapse; border: 1px solid black; margin: auto;">
+    @for (var i = 0; i < FieldSize; i++)
+    {
+        <tr>
+            @for (var j = 0; j < FieldSize; j++)
+            {
+                var row = i; // Локальная копия
+                var col = j; // Локальная копия
+                <td class="cell"
+                    style="border: 1px solid black; border-top: none; border-left: none; width: 50px; height: 50px; text-align: center; cursor: pointer;"
+                    @onclick="() => OnCellClick(row, col)" disabled="@IsCellDisabled(row, col)">
+                    @Field[row, col]
+                </td>
+            }
+        </tr>
+    }
+</table>
+
+@code {
+    [Parameter] public string[,] Field { get; set; } = new string[0, 0];
+    [Parameter] public int FieldSize { get; set; }
+    [Parameter] public EventCallback<(int, int)> CellClicked { get; set; }
+    [Parameter] public Func<int, int, bool> IsCellDisabled { get; set; }
+
+    private async Task OnCellClick(int row, int col)
+    {
+        await CellClicked.InvokeAsync((row, col));
+    }
+}

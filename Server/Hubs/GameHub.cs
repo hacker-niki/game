@@ -3,134 +3,121 @@ using Newtonsoft.Json;
 using Server.Models;
 using Server.Services;
 
-namespace Server.Hubs
+namespace Server.Hubs;
+
+public class GameHub(IGameService gameService) : Hub
 {
-    public class GameHub : Hub
+    public async void CreateGame(int boardSize, string playerName, int playersCount = 2)
     {
-        private readonly IGameService _gameService;
-        private readonly ILogger<GameHub> _logger;
+        var game = gameService.CreateGame(boardSize, Context.ConnectionId, playerName, playersCount);
+        var json = JsonConvert.SerializeObject(game);
 
-        public GameHub(IGameService gameService, ILogger<GameHub> logger)
+        // Добавить создателя игры в группу с идентификатором игры
+        await Groups.AddToGroupAsync(Context.ConnectionId, game.Id);
+
+        await Clients.Caller.SendAsync("ReceiveCreateGame", json);
+    }
+
+    public async Task JoinGame(string gameId, string playerName)
+    {
+        var success = gameService.JoinGame(gameId, Context.ConnectionId, playerName);
+
+        if (success)
         {
-            _gameService = gameService;
-            _logger = logger;
-        }
-        public async void CreateGame(int boardSize, string playerName, int playersCount = 2)
-        {
-            var game = _gameService.CreateGame(boardSize, Context.ConnectionId, playerName, playersCount);
+            var game = gameService.GetGame(gameId);
             var json = JsonConvert.SerializeObject(game);
-            await Clients.Caller.SendAsync("ReceiveCreateGame", json);
-        }
-        public async Task JoinGame(string gameId, string playerName)
-        {
-            bool success = _gameService.JoinGame(gameId, Context.ConnectionId, playerName);
-            // TODO: if gameservice.JoinGame returns adding new user notify all users of game
-            if (success)
-            {
-                var game = _gameService.GetGame(gameId);
-                var json = JsonConvert.SerializeObject(game);
-                foreach (var player in game?.Players ?? new())
-                {
-                    await Clients.Client(player.Id).SendAsync("ReceiveJoinGame", json);
-                }
-            }
-            else
-            {
-                var error = new Error { Message = "Join game error", RedirectHome = true };
-                var json = JsonConvert.SerializeObject(error);
-                await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
-            }
-        }
 
-        public async Task LeaveGame(string gameId)
-        {
-            var game = _gameService.ExitGame(gameId, Context.ConnectionId);
-            if (game == null)
-            {
-                var error = new Error { Message = "Leave game error", RedirectHome = true };
-                var json = JsonConvert.SerializeObject(error);
-                await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
-            }
-            else
-            {
-                var json = JsonConvert.SerializeObject(game);
-                foreach (var player in game?.Players ?? new())
-                {
-                    await Clients.Client(player.Id).SendAsync("ReceiveLeaveGame", json);
-                }
-            }
+            // Добавить игрока в группу игры
+            await Groups.AddToGroupAsync(Context.ConnectionId, gameId);
 
+            // Уведомить всех участников группы об изменении
+            await Clients.Group(gameId).SendAsync("ReceiveJoinGame", json);
         }
-
-        public async Task GetGame(string gameId)
+        else
         {
-            var game = _gameService.GetGame(gameId);
+            var error = new Error { Message = "Join game error", RedirectHome = true };
+            var json = JsonConvert.SerializeObject(error);
+            await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
+        }
+    }
+
+    public async Task LeaveGame(string gameId)
+    {
+        var game = gameService.ExitGame(gameId, Context.ConnectionId);
+        if (game == null)
+        {
+            var error = new Error { Message = "Leave game error", RedirectHome = true };
+            var json = JsonConvert.SerializeObject(error);
+            await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
+        }
+        else
+        {
             var json = JsonConvert.SerializeObject(game);
-            await Clients.Client(Context.ConnectionId).SendAsync("ReceiveGame", json);
-        }
-        
-        public async Task MakeMove(string gameId, int x, int y)
-        {
-            bool success = _gameService.MakeMove(gameId, Context.ConnectionId, x, y);
-            if (success)
-            {
-                var game = _gameService.GetGame(gameId);
-                if (game != null)
-                {
-                    var jsonBoard = JsonConvert.SerializeObject(game.Board);
-                    var jsonCurPlayer = JsonConvert.SerializeObject(game.CurrentPlayerTurn);
-                    // Notify all players in the group about the updated game board and current turn
-                    foreach (var player in game?.Players ?? new())
-                    {
-                        await Clients.Client(player.Id).SendAsync("UpdateBoard", jsonBoard, jsonCurPlayer);
-                    }
 
-                    // Check if the game has ended
-                    if (game.GameStatus == 2) // Assuming 2 indicates "Game Over"
-                    {
-                        foreach (var player in game?.Players ?? new())
-                        {
-                            var jsonWinner = JsonConvert.SerializeObject(game.Winner);
-                            await Clients.Client(player.Id).SendAsync("GameOver", jsonWinner);
-                        }
-                    }
+            // Удалить игрока из группы игры
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, gameId);
+
+            // Уведомить всех участников группы об изменении
+            await Clients.Group(gameId).SendAsync("ReceiveLeaveGame", json);
+        }
+    }
+
+    public async Task GetGame(string gameId)
+    {
+        var game = gameService.GetGame(gameId);
+        var json = JsonConvert.SerializeObject(game);
+        await Clients.Client(Context.ConnectionId).SendAsync("ReceiveGame", json);
+    }
+
+    public async Task MakeMove(string gameId, int x, int y)
+    {
+        var success = gameService.MakeMove(gameId, Context.ConnectionId, x, y);
+        if (success)
+        {
+            var game = gameService.GetGame(gameId);
+            if (game != null)
+            {
+                var jsonGame = JsonConvert.SerializeObject(game);
+                // Уведомить всех игроков в группе об изменении
+                await Clients.Group(gameId).SendAsync("UpdateBoard", jsonGame);
+
+                if (game.GameStatus == 2) // Проверка на завершение игры
+                {
+                    var jsonWinner = JsonConvert.SerializeObject(game.Winner);
+                    await Clients.Group(gameId).SendAsync("GameOver", jsonWinner);
                 }
             }
-            else
-            {
-                var error = new Error { Message = "Move error", RedirectHome = false };
-                var json = JsonConvert.SerializeObject(error);
-                await Clients.Client(Context.ConnectionId).SendAsync("Error", error);
-            }
         }
-        public async Task GetAllGames()
+        else
         {
-            var games = _gameService.GetAllGames();
-            var json = JsonConvert.SerializeObject(games);
-            await Clients.Caller.SendAsync("ReceiveAllGames", json);
-
+            var error = new Error { Message = "Move error", RedirectHome = false };
+            var json = JsonConvert.SerializeObject(error);
+            await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
         }
+    }
 
-        public override async Task OnDisconnectedAsync(Exception? exception)
+    public async Task GetAllGames()
+    {
+        var games = gameService.GetAllGames();
+        var json = JsonConvert.SerializeObject(games);
+        await Clients.Caller.SendAsync("ReceiveAllGames", json);
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var games = gameService.GetAllGames();
+        foreach (var game in games)
         {
-            // Logic to handle player disconnection
-            var games = _gameService.GetAllGames();
-            foreach (var game in games)
-            {
-                var json = JsonConvert.SerializeObject(game);
-                if (game.Players.Any(p => p.Id == Context.ConnectionId))
-                {
-                    _gameService.DropGame(game.Id);
-                    foreach (var player in game?.Players ?? new())
-                    {
-                        await Clients.Client(player.Id).SendAsync("DropGame", json);
-                    }
-                    // await Groups.RemoveFromGroupAsync(Context.ConnectionId, game.Id);
-                    // // Optionally notify other players about the disconnection
-                    // await Clients.Group(game.Id).SendAsync("PlayerDisconnected", Context.ConnectionId);
-                }
-            }
-            await base.OnDisconnectedAsync(exception);
+            if (game.Players.All(p => p.Id != Context.ConnectionId)) continue;
+            // Удалить игрока из группы игры
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, game.Id);
+
+            var json = JsonConvert.SerializeObject(game);
+            gameService.DropGame(game.Id);
+
+            // Уведомить всех участников группы об изменении
+            await Clients.Group(game.Id).SendAsync("DropGame", json);
         }
+        await base.OnDisconnectedAsync(exception);
     }
 }

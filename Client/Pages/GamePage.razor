@@ -1,0 +1,133 @@
+@page "/game/{GameId}"
+@using Client.Interfaces
+@using Client.Models
+@using Newtonsoft.Json
+@using Client.Components
+@inject NavigationManager Navigation
+@inject ISignalRService SignalService
+
+@if (_gameStatus != 2)
+{
+    <h3 class="text-center">@GetTurnMessage()</h3>
+}
+<div class="container">
+    <div class="row">
+        <!-- Главная часть - Игровое поле -->
+        <div class="col-md-8">
+            @if (_gameStatus == 2)
+            {
+                <div style="text-align: center;">
+                    <b style="font-size: 2em;">Игра завершена</b>
+                    <br>
+                    @_endMessage
+                </div>
+                <button class="btn btn-primary" @onclick="ToHome">Выход</button>
+            }
+            else
+            {
+                <GameField Field="@_field" FieldSize="@_fieldSize"
+                           CellClicked="OnCellClick"
+                           IsCellDisabled="IsCellDisabled" />
+            }
+        </div>
+
+        <!-- Правая часть - Список игроков -->
+        <div class="col-md-4">
+            <PlayersList Players="@_playerList" ConnectionId="@SignalService.ConnectionId" />
+        </div>
+    </div>
+</div>
+
+@code
+{
+    [Parameter] public string GameId { get; set; }
+
+    // Переменные, получаемые с сервера
+    private List<Player> _playerList = [];
+    private bool _isMyMove;
+    private string _currentUserName;
+    private int _fieldSize;
+    private string[,] _field;
+    private int _gameStatus = 0; // не начата
+    private string _myName;
+    private string _endMessage;
+
+    // Флаг для блокировки нажатий после хода
+    private bool _isLocked = false;
+
+    protected override void OnInitialized()
+    {
+        SignalService.ReceiveGame += ReceiveGame;
+        SignalService.ReceiveDropGame += DropGame;
+
+        SignalService.GetGame(GameId);
+    }
+
+    private void ReceiveGame(string json)
+    {
+        var game = JsonConvert.DeserializeObject<Game>(json);
+        _playerList = game!.Players;
+        _isMyMove = game.CurrentPlayerTurn.Id == SignalService.ConnectionId;
+        _currentUserName = game.CurrentPlayerTurn.Name;
+        _field = game.Board;
+        _myName = game.Players.FirstOrDefault(p => p.Id == SignalService.ConnectionId)!.Name;
+        _fieldSize = game.BoardSize;
+        _gameStatus = game.GameStatus;
+        if (game.Winner is not null || game.GameStatus == 2)
+        {
+            if (game.Winner is not null)
+            {
+                _endMessage = $"Победил игрок {game.Winner.Symbol}-{game.Winner.Name}.";
+                _gameStatus = 2;
+            }
+            else
+            {
+                _endMessage = "Ничья.";
+            }
+        }
+
+        StateHasChanged();
+        _isLocked = false;
+    }
+
+    private void DropGame(string json)
+    {
+        if (_gameStatus == 2)
+        {
+            return;
+        }
+
+        var game = JsonConvert.DeserializeObject<Game>(json);
+        _myName = game.Players.FirstOrDefault(p => p.Id == SignalService.ConnectionId)!.Name;
+        _endMessage = "Другой пользователь покинул игру.";
+        _gameStatus = 2;
+        _isLocked = true;
+        StateHasChanged();
+    }
+
+    private Task OnCellClick((int, int) valueTuple)
+    {
+        var i = valueTuple.Item1;
+        var j = valueTuple.Item2;
+        if (IsCellDisabled(i, j))
+            return Task.CompletedTask;
+
+        _isLocked = true;
+        SignalService.MakeMove(GameId, i, j);
+        return Task.CompletedTask;
+    }
+
+    private void ToHome() => Navigation.NavigateTo($"/games?username={_myName}");
+
+    private bool IsCellDisabled(int i, int j)
+    {
+        return _gameStatus == 0 || _isLocked || !_isMyMove || !string.IsNullOrEmpty(_field[i, j]);
+    }
+
+    private string GetTurnMessage()
+    {
+        if (_gameStatus == 0)
+            return "Ожидаем игроков...";
+        return _isMyMove ? "Сейчас ваш ход." : $"Ходит игрок: {_currentUserName}";
+    }
+}

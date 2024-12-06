@@ -1,0 +1,39 @@
+@page "/"
+@using System.ComponentModel.DataAnnotations
+@inject NavigationManager Navigation
+
+<div class="name-form">
+    <h1>Познакомимся</h1>
+    <EditForm Model="UserModel" OnValidSubmit="Submit">
+        <AntiforgeryToken/>
+        <DataAnnotationsValidator/>
+        <div>
+            <label>
+                Имя пользователя:
+                <InputText @bind-Value="UserModel.Username"/>
+            </label>
+            <ValidationMessage For="@(() => UserModel.Username)"/>
+        </div>
+        <div>
+            <button type="submit">Отправить</button>
+        </div>
+    </EditForm>
+</div>
+
+@code {
+    public readonly User UserModel = new();
+
+    public class User
+    {
+        [Required(ErrorMessage = "Имя пользователя обязательно.")]
+        [MaxLength(20, ErrorMessage = "Имя не должно быть длиннее 20 символов.")]
+        [MinLength(5, ErrorMessage = "Имя должно быть длиной не менее 5 символов.")]
+        public string Username { get; set; }
+    }
+
+    private void Submit()
+    {
+        Navigation.NavigateTo($"/games?username={UserModel.Username}");
+    }
+
+}

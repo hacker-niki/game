@@ -1,0 +1,135 @@
+@page "/games"
+@using Client.Interfaces
+@using Client.Models
+@using Newtonsoft.Json
+@inject ISignalRService SignalService
+@inject NavigationManager Navigation
+
+<dev class="games-list">
+    <button @onclick="async () => await SignalService.GetAllGames()">Refresh</button>
+    <h3>Список игр</h3>
+    @if (_games == null || !_games.Any())
+    {
+        <p>Игр пока нет.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                <th>ID Игры</th>
+                <th>Размер поля</th>
+                <th>Игроки</th>
+                <th>Количество игроков</th>
+                <th>Статус игры</th>
+                <th>Действия</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var game in _games)
+            {
+                <tr>
+                    <td>@game.Id</td>
+                    <td>@game.BoardSize x @game.BoardSize</td>
+                    <td>
+                        @foreach (var player in game.Players)
+                        {
+                            <span>@player.Name (@player.Symbol)</span>
+                            <br/>
+                        }
+                    </td>
+                    <td>@game.PlayersCount</td>
+                    <td>@GetGameStatus(game.GameStatus)</td>
+                    <td>
+                        <button class="btn btn-primary" @onclick="() => JoinGame(game.Id)">Перейти</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+</dev>
+
+<div class="game-creation">
+    <EditForm Model="@_gameModel" OnValidSubmit="CreateGame">
+        <DataAnnotationsValidator/>
+        <ValidationSummary/>
+
+        <div class="form-group">
+            <label >
+                Размер игрового поля:
+                <InputNumber @bind-Value="_gameModel.FieldSize" class="form-control"/>
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label >
+                Количество игроков:
+                <InputNumber @bind-Value="_gameModel.PlayerCount" class="form-control"/>
+            </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Создать</button>
+    </EditForm>
+</div>
+
+@code {
+    [Parameter] [SupplyParameterFromQuery] public string? Username { get; set; }
+    private readonly GameModel _gameModel = new();
+    private List<Game> _games = [];
+    
+    protected override async Task OnInitializedAsync()
+    {
+        if (Username is null)
+            Navigation.NavigateTo("/");
+        
+        SignalService.ReceiveAllGames += GamesListCallback;
+        
+        // SignalService.OnErrorReceived +=
+        SignalService.ReceiveGame += JoinCallback;
+            
+        await SignalService.GetAllGames();
+    }
+    
+    private async Task CreateGame()
+    {
+        await SignalService.CreateGame(Username!, _gameModel.FieldSize, _gameModel.PlayerCount);
+    }
+    
+    private async Task JoinGame(string gameId)
+    {
+        await SignalService.JoinGame(gameId, Username!);
+    }
+
+    private void JoinCallback(string json)
+    {
+        var game = JsonConvert.DeserializeObject<Game>(json);
+        if (game is null)
+        {
+            throw new Exception("hey");
+        }
+        Navigation.NavigateTo($"/game/{game.Id}");
+    }
+    
+    private void GamesListCallback(string jsonList)
+    {
+        _games = JsonConvert.DeserializeObject<List<Game>>(jsonList)!;
+        StateHasChanged();
+    }
+
+    // Функция для получения текстового представления статуса игры
+    private string GetGameStatus(int status) => status switch
+    {
+        0 => "Не начата",
+        1 => "В процессе",
+        2 => "Завершена",
+        _ => "Неизвестно"
+    };
+    
+    public class GameModel
+    {
+        public int FieldSize { get; set; }
+        public int PlayerCount { get; set; }
+    }
+
+}

@@ -1,0 +1,19 @@
+@using Client.Models
+<h4>Список игроков:</h4>
+<ul class="list-group">
+    @foreach (var player in Players)
+    {
+        <li class="list-group-item">
+            <b>@player.Symbol</b> @player.Name
+            @if (player.Id == ConnectionId)
+            {
+                <span> (Вы)</span>
+            }
+        </li>
+    }
+</ul>
+
+@code {
+    [Parameter] public List<Player> Players { get; set; } = [];
+    [Parameter] public string ConnectionId { get; set; }
+}

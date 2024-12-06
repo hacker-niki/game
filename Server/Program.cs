@@ -7,8 +7,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<IGameService, GameService>();
 
 builder.Services.AddSingleton<IGameService, GameService>();
 
@@ -18,8 +18,7 @@ builder.Services.AddCors(opts => opts.AddDefaultPolicy(bld => // <-- added this
         .AllowAnyOrigin()
         .AllowAnyMethod()
         .AllowAnyHeader()
-        .WithExposedHeaders("*")
-        ;
+        .WithExposedHeaders("*");
 }));
 
 
