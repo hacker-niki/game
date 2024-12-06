@@ -28,12 +28,17 @@ namespace Server.Hubs
             if (success)
             {
                 var game = _gameService.GetGame(gameId);
-                foreach (var player in game?.Players?? new())
+                foreach (var player in game?.Players ?? new())
                 {
                     await Clients.Client(player.Id).SendAsync("JoinUser", game);
                 }
             }
-            // TODO:  if gameservice.JoinGame returns fulling of users for game, start game and notify users about start
+            else
+            {
+                var error = new Error { Message = "Join game error", RedirectHome = true };
+                var json = JsonConvert.SerializeObject(error);
+                await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
+            }
         }
         public async Task MakeMove(string gameId, int x, int y)
         {
@@ -54,19 +59,24 @@ namespace Server.Hubs
                     {
                         foreach (var player in game?.Players ?? new())
                         {
-                            await Clients.Client(player.Id).SendAsync("UpdateBoard", game.Board, game.CurrentPlayerTurn);
                             await Clients.Client(player.Id).SendAsync("GameOver", game.Winner);
                         }
                     }
                 }
             }
+            else
+            {
+                var error = new Error { Message = "Move error", RedirectHome = false };
+                var json = JsonConvert.SerializeObject(error);
+                await Clients.Client(Context.ConnectionId).SendAsync("Error", error);
+            }
         }
-        public async Task GetAllGames () 
+        public async Task GetAllGames()
         {
             var games = _gameService.GetAllGames();
             var json = JsonConvert.SerializeObject(games);
             await Clients.Caller.SendAsync("ReceiveAllGames", json);
-            
+
         }
         public async Task GetGame(string gameId)
         {
