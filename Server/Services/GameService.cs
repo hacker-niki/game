@@ -22,7 +22,7 @@ public class GameService : IGameService
 
     public bool JoinGame(string gameId, string playerId, string playerName)
     {
-        if (_games.TryGetValue(gameId, out var game) && game.PlayersCount < game.Players.Count)
+        if (_games.TryGetValue(gameId, out var game) && game.PlayersCount > game.Players.Count)
         {
             var nextSymbol = _symbols[game.Players.Count];
             var player = new Player { Id = playerId, Name = playerName, Symbol = nextSymbol };
@@ -37,6 +37,45 @@ public class GameService : IGameService
         }
 
         return false;
+    }
+
+    public Game? ExitGame(string gameId, string playerId)
+    {
+        if (!_games.TryGetValue(gameId, out var game)) return null;
+        switch (game.GameStatus)
+        {
+            case 0:
+            {
+                var t = game.Players.FindIndex(p => p.Id == playerId);
+                if (t >= 0)
+                {
+                    game.Players.RemoveAt(t);
+                }
+
+                break;
+            }
+            case 1:
+                DropGame(gameId);
+                break;
+            default:
+            {
+                var t = game.Players.FindIndex(p => p.Id == playerId);
+                if (t >= 0)
+                {
+                    game.Players.RemoveAt(t);
+                }
+
+                if (game.Players.Count == 0)
+                {
+                    DropGame(gameId);
+                }
+
+                break;
+            }
+        }
+
+        return game;
+
     }
 
     public bool MakeMove(string gameId, string playerId, int x, int y)
@@ -183,6 +222,7 @@ public class GameService : IGameService
         {
             return game.GameStatus;
         }
+
         return -1;
     }
 }

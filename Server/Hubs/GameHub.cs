@@ -19,7 +19,7 @@ namespace Server.Hubs
         {
             var game = _gameService.CreateGame(boardSize, Context.ConnectionId, playerName, playersCount);
             var json = JsonConvert.SerializeObject(game);
-            await Clients.Caller.SendAsync("RecieveCreateGame", json);
+            await Clients.Caller.SendAsync("ReceiveCreateGame", json);
         }
         public async Task JoinGame(string gameId, string playerName)
         {
@@ -28,9 +28,10 @@ namespace Server.Hubs
             if (success)
             {
                 var game = _gameService.GetGame(gameId);
+                var json = JsonConvert.SerializeObject(game);
                 foreach (var player in game?.Players ?? new())
                 {
-                    await Clients.Client(player.Id).SendAsync("JoinUser", game);
+                    await Clients.Client(player.Id).SendAsync("ReceiveJoinGame", json);
                 }
             }
             else
@@ -40,6 +41,34 @@ namespace Server.Hubs
                 await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
             }
         }
+
+        public async Task LeaveGame(string gameId)
+        {
+            var game = _gameService.ExitGame(gameId, Context.ConnectionId);
+            if (game == null)
+            {
+                var error = new Error { Message = "Leave game error", RedirectHome = true };
+                var json = JsonConvert.SerializeObject(error);
+                await Clients.Client(Context.ConnectionId).SendAsync("Error", json);
+            }
+            else
+            {
+                var json = JsonConvert.SerializeObject(game);
+                foreach (var player in game?.Players ?? new())
+                {
+                    await Clients.Client(player.Id).SendAsync("ReceiveLeaveGame", json);
+                }
+            }
+
+        }
+
+        public async Task GetGame(string gameId)
+        {
+            var game = _gameService.GetGame(gameId);
+            var json = JsonConvert.SerializeObject(game);
+            await Clients.Client(Context.ConnectionId).SendAsync("ReceiveGame", json);
+        }
+        
         public async Task MakeMove(string gameId, int x, int y)
         {
             bool success = _gameService.MakeMove(gameId, Context.ConnectionId, x, y);
@@ -48,10 +77,12 @@ namespace Server.Hubs
                 var game = _gameService.GetGame(gameId);
                 if (game != null)
                 {
+                    var jsonBoard = JsonConvert.SerializeObject(game.Board);
+                    var jsonCurPlayer = JsonConvert.SerializeObject(game.CurrentPlayerTurn);
                     // Notify all players in the group about the updated game board and current turn
                     foreach (var player in game?.Players ?? new())
                     {
-                        await Clients.Client(player.Id).SendAsync("UpdateBoard", game.Board, game.CurrentPlayerTurn);
+                        await Clients.Client(player.Id).SendAsync("UpdateBoard", jsonBoard, jsonCurPlayer);
                     }
 
                     // Check if the game has ended
@@ -59,7 +90,8 @@ namespace Server.Hubs
                     {
                         foreach (var player in game?.Players ?? new())
                         {
-                            await Clients.Client(player.Id).SendAsync("GameOver", game.Winner);
+                            var jsonWinner = JsonConvert.SerializeObject(game.Winner);
+                            await Clients.Client(player.Id).SendAsync("GameOver", jsonWinner);
                         }
                     }
                 }
@@ -78,12 +110,6 @@ namespace Server.Hubs
             await Clients.Caller.SendAsync("ReceiveAllGames", json);
 
         }
-        public async Task GetGame(string gameId)
-        {
-            var game = _gameService.GetGame(gameId);
-            var json = JsonConvert.SerializeObject(game);
-            await Clients.Caller.SendAsync("ReceiveGetGame", json);
-        }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
@@ -91,12 +117,13 @@ namespace Server.Hubs
             var games = _gameService.GetAllGames();
             foreach (var game in games)
             {
+                var json = JsonConvert.SerializeObject(game);
                 if (game.Players.Any(p => p.Id == Context.ConnectionId))
                 {
                     _gameService.DropGame(game.Id);
                     foreach (var player in game?.Players ?? new())
                     {
-                        await Clients.Client(player.Id).SendAsync("DropGame", game);
+                        await Clients.Client(player.Id).SendAsync("DropGame", json);
                     }
                     // await Groups.RemoveFromGroupAsync(Context.ConnectionId, game.Id);
                     // // Optionally notify other players about the disconnection

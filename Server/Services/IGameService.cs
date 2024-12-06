@@ -8,6 +8,7 @@ public interface IGameService
     bool JoinGame(string gameId, string playerId, string playerName);
     bool MakeMove(string gameId, string playerId, int x, int y);
     Game? GetGame(string gameId);
+    Game? ExitGame(string gameId, string playerId);
     bool DropGame(string gameId);
     Game[] GetAllGames();
     public int GetState(string gameId);
